@@ -1,0 +1,1 @@
+User	X	Y	MouseTimeStamp	MouseDownTimeStamp	MouseUpTimeStamp	SessionID

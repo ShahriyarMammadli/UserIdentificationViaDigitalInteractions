@@ -1,0 +1,3 @@
+User	KeyDownTimeStamp	KeyReleaseTimeStamp	SessionID
+user1	1271993220878	1271993221219	8b3f1c413e18c0fada0b8ed5cf0e
+user1	1271993221054	1271993221224	8b3f1c413e18c0fada0b8ed5cf0e

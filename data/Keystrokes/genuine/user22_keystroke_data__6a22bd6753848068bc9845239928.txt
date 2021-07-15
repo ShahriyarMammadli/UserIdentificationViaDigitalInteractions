@@ -1,0 +1,2 @@
+User	KeyDownTimeStamp	KeyReleaseTimeStamp	SessionID
+user22	1271690039243	1271690039338	6a22bd6753848068bc9845239928

@@ -1,109 +1,64 @@
-# Import required models
-import numpy as np
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, Dropout, MaxPooling1D, Flatten, Dense
-import pickle
+# Shahriyar Mammadli
+# Master module to orchestrate the sub-modules for intrusion detection system.
+# Import required libraries.
+import os
 import dataPreparation as dp
-import helperFunctions as hf
-from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
+from tensorflow.keras.utils import to_categorical
+import helperFunctions as hf
+import pandas as pd
 
-# Initialize the parameters
-# Seed value for randomization
-seed = 2020
-# Initialize train validation split ratio
-ratio = (0.5, 0.5)
-# We set threshold to 10. The samples that are shorter than 10 will be removed
-threshold = 10
-def evaluate_model(trainX, trainy, testX, testy):
-    verbose, epochs, batch_size = 100, 10, 8
-    n_timesteps, n_features, n_outputs = 852, 2, 25
-    trainX = np.asarray(trainX)
-    testX = np.asarray(testX)
-    trainy = to_categorical(trainy)
-    testy = to_categorical(testy)
-    model = Sequential()
-    model.add(Conv1D(filters=64, kernel_size=5, activation='relu', input_shape=(n_timesteps, n_features)))
-    model.add(Conv1D(filters=64, kernel_size=5, activation='relu'))
-    model.add(Dropout(0.4))
-    model.add(MaxPooling1D(pool_size=4))
-    model.add(Conv1D(filters=128, kernel_size=5, activation='relu'))
-    model.add(Conv1D(filters=128, kernel_size=5, activation='relu'))
-    model.add(Dropout(0.4))
-    model.add(MaxPooling1D(pool_size=2))
-    model.add(Flatten())
-    model.add(Dense(100, activation='relu'))
-    model.add(Dense(25, activation='softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    [print(i.shape, i.dtype) for i in model.inputs]
-    [print(o.shape, o.dtype) for o in model.outputs]
-    [print(l.name, l.input_shape, l.dtype) for l in model.layers]
-    # fit network
-    model.fit(trainX, trainy, epochs=epochs, batch_size=batch_size, verbose=verbose)
-    # evaluate model
-    _, accuracy = model.evaluate(testX, testy, batch_size=batch_size, verbose=0)
-    return accuracy
+# Set parameters.
+# Pandas DataFrame printing options.
+pd.options.display.max_columns = None
+# A dictionary to hold features and their paths.
+featureParameters = [{
+    'name': 'mouse',
+    'path': os.path.abspath('./data/MouseActions'),
+    'cols': [1, 2, 3, 4, 5],
+    'threshold': 15
+    }, {
+    'name': 'keyboard',
+    'path': os.path.abspath('./data/Keystrokes'),
+    'cols': [1, 2],
+    'threshold': 20
+    }
+]
+# Retrieve the longest sample size (time-steps) for mouse data.
+longestMouseSample = dp.findLongestSample(os.path.join(featureParameters[0]['path'], 'genuine'))
+# Retrieve the longest sample size (time-steps) for keyboard data.
+longestKeyboardSample = dp.findLongestSample(os.path.join(featureParameters[1]['path'], 'genuine'))
+# Set training parameters.
+verbose, epochs, batchSize = 1, 8, 32
 
-def summarize_results(scores):
-    print(scores)
-    m, s = np.mean(scores), np.std(scores)
-    print('Accuracy: %.3f%% (+/-%.3f)' % (m, s))
 
-# run an experiment
-def run_experiment(featuresTrain, labelsTrain, featuresVal, labelsVal, repeats=10):
-    import time
-    start = time.time()
-    # load data
-    trainX, trainy, testX, testy = featuresTrain, labelsTrain, featuresVal, labelsVal
-    # repeat experiment
+# A function to implement the experiment steps.
+def runExperiment(featureObj, longestSampleLength,  repeats=10):
+    print("Training a model on the feature " + featureObj['name'] + ".")
+    # Processing and Loading the data.
+    features, classes = dp.loadData(featureObj, longestSampleLength)
+    # Split the data.
+    X_train, X_test, y_train, y_test = train_test_split(features, classes, test_size=0.2, random_state=44)
+    # One-hot encode the classes.
+    y_train = to_categorical(y_train)
+    y_test = to_categorical(y_test)
+    # Repeat the experiment.
     scores = list()
     for r in range(repeats):
-        score = evaluate_model(trainX, trainy, testX, testy)
+        if featureObj['name'] == 'keyboard':
+            score = hf.keyboardModel(X_train, y_train, X_test, y_test, verbose, epochs, batchSize)
+        elif featureObj['name'] == 'mouse':
+            score = hf.mouseModel(X_train, y_train, X_test, y_test, verbose, epochs, batchSize)
+        else:
+            raise ValueError(f"The feature name {featureObj['name']} is not known.")
         score = score * 100.0
         print('>#%d: %.3f' % (r + 1, score))
         scores.append(score)
-    end = time.time()
-    elapsed = end - start
-    print(f"Training took {elapsed} seconds")
-    # summarize results
-    start = time.time()
-    summarize_results(scores)
-    end = time.time()
-    elapsed = end - start
-    print(f"Testing took {elapsed} seconds")
+    # Summarize the results.
+    hf.summarizeResults(scores)
 
-# Perform the data preparation phase
-# Choose whether do the train and validation split. Default value...
-# ...is False. If it is first time run, make it True. Decomment...
-# ...the following line for this purpose.
-dp.prepareData(ratio, trainValSplit=True, threshold=threshold, seed=seed)
 
-with open('trainData.pickle', 'rb') as handle:
-    labelsTrain, featuresTrain, labelsVal, featuresVal = pickle.load(handle)
-
-# Some of the samples includes very few data points of time series...
-# ...which needs to extracted. To achieve that we need to firstly...
-# ...specify a threshold. Samples that have less data points than...
-# ...threshold will be removed. For this purpose we are using histogram...
-# ...to analyze the distribution and frequency of lengths.
-# Other than that, we need to specify pad length, to which length, we...
-# ...will pad the samples. To achieve that, we will use the maximum length in...
-# ...the training set.
-# In first run we set threshold to 0, then after plotting the histogram...
-# ...and choose a value for threshold parameter, then set it for next runs.
-# Plot the histogram of the samples' length
-# hf.plotHistogram([len(i) for i in featuresTrain + featuresVal], numOfBins=300)
-
-# By the help of histogram we choose the threshold as 10
-# Print the lengths of maximum samples of train set and validation set
-print(f'The maximum length among the samples is {max([len(i) for i in featuresTrain])} in TRAINING set')
-print(f'The maximum length among the samples is {max([len(i) for i in featuresVal])} in VALIDATION set')
-# Max value for Training set is 852, and 745 for Validation set which will make our work easier...
-# ...since if any of the samples in Validation set would be bigger than the maximum value of...
-# ...the training set we would need to reduce their size.
-padSize = max([len(i) for i in featuresTrain])
-# Pad sequences
-featuresTrain = hf.padSequences(featuresTrain, padSize)
-featuresVal = hf.padSequences(featuresVal, padSize)
-
-run_experiment(featuresTrain, labelsTrain, featuresVal, labelsVal)
+# Run the experiment for mouse data.
+# runExperiment(featureParameters[0], longestMouseSample)
+# Run the experiment for keyboard data.
+runExperiment(featureParameters[1], longestKeyboardSample)
